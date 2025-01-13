@@ -168,9 +168,6 @@ if args.train_autoencoder:
                 vae_optimizer.step()
                 bert_optimizer.step()
                 
-                dt_t = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-                print('{} Epoch: {:04d}, Batch: {}, Train Loss: {:.5f}, Train Reconstruction Loss: {:.2f}, Train KLD Loss: {:.2f}'.format(dt_t,epoch, cnt_train, loss.item(), recon.item(), kld.item()))
-
 
             autoencoder.eval()
             bert_cond_model.eval()
@@ -320,9 +317,6 @@ if args.train_denoiser:
             train_loss_all += x_g.size(0) * loss.item()
             train_count += x_g.size(0)
             optimizer.step()
-            
-
-            print('Epoch: {:04d}, Train Loss: {:.5f}'.format(epoch, loss.item()))
 
 
         denoise_model.eval()
