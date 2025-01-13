@@ -23,7 +23,7 @@ from extract_feats import extract_feats, extract_numbers
 
 
 
-def preprocess_dataset(dataset, n_max_nodes, spectral_emb_dim, LM):
+def preprocess_dataset(dataset, n_max_nodes, spectral_emb_dim):
 
     data_lst = []
     if dataset == 'test':
@@ -42,11 +42,7 @@ def preprocess_dataset(dataset, n_max_nodes, spectral_emb_dim, LM):
                 graph_id = tokens[0]
                 desc = tokens[1:]
                 desc = "".join(desc)
-                #feats_stats = extract_numbers(desc, LM)
-                #feats_stats = torch.FloatTensor(feats_stats).unsqueeze(0)
-                #data_lst.append(Data(stats=feats_stats, filename = graph_id))
-                
-                data_lst.append(Data(stats=desc, filename = graph_id))  ## ADDED
+                data_lst.append(Data(stats=desc, filename = graph_id))  
                 
             fr.close()                    
             torch.save(data_lst, filename)
@@ -115,7 +111,7 @@ def preprocess_dataset(dataset, n_max_nodes, spectral_emb_dim, LM):
                 with np.errstate(divide="ignore"):
                     diags_sqrt = 1.0 / np.sqrt(diags)
                 diags_sqrt[np.isinf(diags_sqrt)] = 0
-                DH = sparse.diags(diags_sqrt).toarray()  ###### correction here
+                DH = sparse.diags(diags_sqrt).toarray()  
                 L = np.linalg.multi_dot((DH, L, DH))
                 L = torch.from_numpy(L).float()
                 eigval, eigvecs = torch.linalg.eigh(L)
@@ -135,8 +131,7 @@ def preprocess_dataset(dataset, n_max_nodes, spectral_emb_dim, LM):
                 adj = F.pad(adj, [0, size_diff, 0, size_diff])
                 adj = adj.unsqueeze(0)
 
-                feats_stats = extract_feats(fstats, LM)
-                #feats_stats = torch.FloatTensor(feats_stats).unsqueeze(0)
+                feats_stats = extract_feats(fstats)
 
                 data_lst.append(Data(x=x, edge_index=edge_index, A=adj, stats=feats_stats, filename = filen))
             torch.save(data_lst, filename)
@@ -251,7 +246,7 @@ def calculate_MAE(output_path = 'output.csv'):
         tokens = line.split(",")
         desc = tokens[1:]
         desc = "".join(desc)
-        feats_stats = extract_numbers(desc, LM=False)
+        feats_stats = extract_numbers(desc)
         feats_stats = torch.FloatTensor(feats_stats).unsqueeze(0)
         properties_desc_lst.append(feats_stats.numpy())
     fr.close()                  

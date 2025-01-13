@@ -116,9 +116,9 @@ args = parser.parse_args()
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 # preprocess train data, validation data and test data. Only once for the first time that you run the code. Then the appropriate .pt files will be saved and loaded.
-trainset = preprocess_dataset("train", args.n_max_nodes, args.spectral_emb_dim, LM=True)
-validset = preprocess_dataset("valid", args.n_max_nodes, args.spectral_emb_dim, LM=True)
-testset = preprocess_dataset("test", args.n_max_nodes, args.spectral_emb_dim, LM=True)
+trainset = preprocess_dataset("train", args.n_max_nodes, args.spectral_emb_dim)
+validset = preprocess_dataset("valid", args.n_max_nodes, args.spectral_emb_dim)
+testset = preprocess_dataset("test", args.n_max_nodes, args.spectral_emb_dim)
 
 
 
@@ -358,7 +358,7 @@ denoise_model.eval()
 del train_loader, val_loader
 
 # Save to a CSV file
-with open(f"output_{args.encoder_type}_{args.aggregation_type}.csv", "w", newline="") as csvfile:
+with open(f"output/output_{args.encoder_type}_{args.aggregation_type}.csv", "w", newline="") as csvfile:
     writer = csv.writer(csvfile)
     # Write the header
     writer.writerow(["graph_id", "edge_list"])
@@ -387,4 +387,4 @@ with open(f"output_{args.encoder_type}_{args.aggregation_type}.csv", "w", newlin
             
             
             
-calculate_MAE(output_path = f'output_{args.encoder_type}_{args.aggregation_type}.csv')
+calculate_MAE(output_path = f'output/output_{args.encoder_type}_{args.aggregation_type}.csv')
