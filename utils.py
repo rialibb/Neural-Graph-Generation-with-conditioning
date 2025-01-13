@@ -1,4 +1,6 @@
 import os
+import pandas as pd 
+import ast
 import math
 import networkx as nx
 import numpy as np
@@ -6,7 +8,7 @@ import scipy as sp
 import scipy.sparse
 import torch
 import torch.nn.functional as F
-import community as community_louvain
+import community.community_louvain as community_louvain
 
 from torch import Tensor
 from torch.utils.data import Dataset
@@ -21,7 +23,7 @@ from extract_feats import extract_feats, extract_numbers
 
 
 
-def preprocess_dataset(dataset, n_max_nodes, spectral_emb_dim):
+def preprocess_dataset(dataset, n_max_nodes, spectral_emb_dim, LM):
 
     data_lst = []
     if dataset == 'test':
@@ -40,9 +42,12 @@ def preprocess_dataset(dataset, n_max_nodes, spectral_emb_dim):
                 graph_id = tokens[0]
                 desc = tokens[1:]
                 desc = "".join(desc)
-                feats_stats = extract_numbers(desc)
-                feats_stats = torch.FloatTensor(feats_stats).unsqueeze(0)
-                data_lst.append(Data(stats=feats_stats, filename = graph_id))
+                #feats_stats = extract_numbers(desc, LM)
+                #feats_stats = torch.FloatTensor(feats_stats).unsqueeze(0)
+                #data_lst.append(Data(stats=feats_stats, filename = graph_id))
+                
+                data_lst.append(Data(stats=desc, filename = graph_id))  ## ADDED
+                
             fr.close()                    
             torch.save(data_lst, filename)
             print(f'Dataset {filename} saved')
@@ -110,7 +115,7 @@ def preprocess_dataset(dataset, n_max_nodes, spectral_emb_dim):
                 with np.errstate(divide="ignore"):
                     diags_sqrt = 1.0 / np.sqrt(diags)
                 diags_sqrt[np.isinf(diags_sqrt)] = 0
-                DH = sparse.diags(diags).toarray()
+                DH = sparse.diags(diags_sqrt).toarray()  ###### correction here
                 L = np.linalg.multi_dot((DH, L, DH))
                 L = torch.from_numpy(L).float()
                 eigval, eigvecs = torch.linalg.eigh(L)
@@ -130,8 +135,8 @@ def preprocess_dataset(dataset, n_max_nodes, spectral_emb_dim):
                 adj = F.pad(adj, [0, size_diff, 0, size_diff])
                 adj = adj.unsqueeze(0)
 
-                feats_stats = extract_feats(fstats)
-                feats_stats = torch.FloatTensor(feats_stats).unsqueeze(0)
+                feats_stats = extract_feats(fstats, LM)
+                #feats_stats = torch.FloatTensor(feats_stats).unsqueeze(0)
 
                 data_lst.append(Data(x=x, edge_index=edge_index, A=adj, stats=feats_stats, filename = filen))
             torch.save(data_lst, filename)
@@ -224,5 +229,53 @@ def sigmoid_beta_schedule(timesteps):
 
 
 
+
+
+def extract_graph(edge_list_str):
+    edge_list = ast.literal_eval(edge_list_str)
+    G = nx.Graph()
+    G.add_edges_from(edge_list)
+    return G
+
+
+
+def calculate_MAE(output_path = 'output.csv'):
+
+    properties_graph_lst = []
+    properties_desc_lst = []
+    
+    desc_file = './data/test/test.txt'
+    fr = open(desc_file, "r")
+    for line in fr:
+        line = line.strip()
+        tokens = line.split(",")
+        desc = tokens[1:]
+        desc = "".join(desc)
+        feats_stats = extract_numbers(desc, LM=False)
+        feats_stats = torch.FloatTensor(feats_stats).unsqueeze(0)
+        properties_desc_lst.append(feats_stats.numpy())
+    fr.close()                  
+    
+    output_graphs = pd.read_csv(output_path)
+    for _, row in output_graphs.iterrows():
+        edge_list_str = row['edge_list']
+        G = extract_graph(edge_list_str)
+        partition = community_louvain.best_partition(G, random_state=42)
+        properties_graph_lst.append([G.number_of_nodes(),
+                                     G.number_of_edges(),
+                                     2 * G.number_of_edges() / G.number_of_nodes(),
+                                     sum(nx.triangles(G).values()) // 3,
+                                     nx.transitivity(G),
+                                     max(nx.core_number(G).values()),
+                                     len(set(partition.values()))])
+        
+    properties_graph_lst = np.array(properties_graph_lst)
+        
+    mae = np.mean(np.abs(properties_graph_lst - properties_desc_lst), axis=0)  # Per-feature MAE
+    overall_mae = np.mean(mae)  # Mean across all features
+    score = overall_mae / 241
+
+    print(f"*** Overall MAE: {overall_mae}")
+    print(f"*** Score: {score}")
 
 

@@ -60,12 +60,13 @@ class SinusoidalPositionEmbeddings(nn.Module):
 
 # Denoise model
 class DenoiseNN(nn.Module):
-    def __init__(self, input_dim, hidden_dim, n_layers, n_cond, d_cond):
+    def __init__(self, input_dim, hidden_dim, n_layers, d_cond, agg_type):
         super(DenoiseNN, self).__init__()
         self.n_layers = n_layers
-        self.n_cond = n_cond
+        self.agg_type = agg_type
+        
         self.cond_mlp = nn.Sequential(
-            nn.Linear(n_cond, d_cond),
+            nn.Linear(d_cond, d_cond),
             nn.ReLU(),
             nn.Linear(d_cond, d_cond),
         )
@@ -77,29 +78,62 @@ class DenoiseNN(nn.Module):
             nn.Linear(hidden_dim, hidden_dim),
         )
 
-        mlp_layers = [nn.Linear(input_dim+d_cond, hidden_dim)] + [nn.Linear(hidden_dim+d_cond, hidden_dim) for i in range(n_layers-2)]
-        mlp_layers.append(nn.Linear(hidden_dim, input_dim))
-        self.mlp = nn.ModuleList(mlp_layers)
+        if agg_type=='concatenation':
+            mlp_layers = [nn.Linear(input_dim+d_cond, hidden_dim)] + [nn.Linear(hidden_dim+d_cond, hidden_dim) for i in range(n_layers-2)]
+            mlp_layers.append(nn.Linear(hidden_dim, input_dim))
+            self.mlp = nn.ModuleList(mlp_layers)
+        elif agg_type=='FiLM':
+            mlp_layers = [nn.Linear(input_dim, hidden_dim)] + [nn.Linear(hidden_dim, hidden_dim) for i in range(n_layers-2)]
+            mlp_layers.append(nn.Linear(hidden_dim, input_dim))
+            self.mlp = nn.ModuleList(mlp_layers)
+            
+            films = [FiLM(input_dim, d_cond)] + [FiLM(hidden_dim, d_cond) for i in range(n_layers-2)]
+            self.films = nn.ModuleList(films) 
+        else:
+            raise Exception(f"The type of aggregation named {agg_type} is not found")
 
         bn_layers = [nn.BatchNorm1d(hidden_dim) for i in range(n_layers-1)]
         self.bn = nn.ModuleList(bn_layers)
 
+        self.attention = nn.MultiheadAttention(hidden_dim, num_heads=4, batch_first=True)  #### ADDED
         self.relu = nn.ReLU()
-        self.tanh = nn.Tanh()
+        
 
     def forward(self, x, t, cond):
-        cond = torch.reshape(cond, (-1, self.n_cond))
-        cond = torch.nan_to_num(cond, nan=-100.0)
         cond = self.cond_mlp(cond)
         t = self.time_mlp(t)
         for i in range(self.n_layers-1):
-            x = torch.cat((x, cond), dim=1)
+            if self.agg_type=='concatenation':
+                x = torch.cat((x, cond), dim=1)
+            elif self.agg_type=='FiLM':
+                x = self.films[i](x, cond)  
+            else:
+                raise Exception(f"The type of aggregation named {agg_type} is not found")
             x = self.relu(self.mlp[i](x))+t
             x = self.bn[i](x)
+            x, _ = self.attention(x.unsqueeze(1), x.unsqueeze(1), x.unsqueeze(1))  #### ADDED
+            x = x.squeeze(1)  #### ADDED
         x = self.mlp[self.n_layers-1](x)
         return x
 
 
+
+
+# FiLM(Feature-wise Linear Modulation)
+class FiLM(nn.Module):
+    def __init__(self, feature_dim, cond_dim):
+        super(FiLM, self).__init__()
+        self.gamma = nn.Linear(cond_dim, feature_dim)
+        self.beta = nn.Linear(cond_dim, feature_dim)
+
+    def forward(self, x, cond):
+        gamma = self.gamma(cond)
+        beta = self.beta(cond)
+        return gamma * x + beta
+    
+    
+    
+    
 @torch.no_grad()
 def p_sample(model, x, t, cond, t_index, betas):
     # define alphas
@@ -123,6 +157,7 @@ def p_sample(model, x, t, cond, t_index, betas):
 
     # Equation 11 in the paper
     # Use our model (noise predictor) to predict the mean
+    
     model_mean = sqrt_recip_alphas_t * (
         x - betas_t * model(x, t, cond) / sqrt_one_minus_alphas_cumprod_t
     )
